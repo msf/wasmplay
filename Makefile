@@ -7,15 +7,15 @@ all: build-go build-go-wasm
 # Build targets
 build-go:
 	@echo "Building native Go binary..."
-	go build -o bench-go codegen.go
+	go build -o bench-go benchmark.go
 
 build-go-wasm:
 	@echo "Building WASM binary..."
-	GOOS=wasip1 GOARCH=wasm go build -o bench-go.wasm codegen.go
+	GOOS=wasip1 GOARCH=wasm go build -o bench-go.wasm benchmark.go
 
 build-go-wasm-opt:
 	@echo "Building optimized WASM binary..."
-	GOOS=wasip1 GOARCH=wasm go build -ldflags="-s -w" -gcflags="-l=4" -o bench-go-opt.wasm codegen.go
+	GOOS=wasip1 GOARCH=wasm go build -ldflags="-s -w" -gcflags="-l=4" -o bench-go-opt.wasm benchmark.go
 
 # C++ Compiler and flags
 CXX ?= g++
