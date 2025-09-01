@@ -119,45 +119,22 @@ bench-wasm-all: bench-cpp-wasm bench-go-wasm bench-zig-wasm
 
 # WASM runtime comparison targets
 bench-wasm-runtimes: build-go-wasm build-cpp-wasm build-zig-wasm
-	@echo "=== WASM Runtime Comparison (Go) ==="
-	@echo "Cranelift (default):"
-	@taskset -c $(CPU_PIN) wasmer run --cranelift bench-go.wasm
-	@echo ""
-	@echo "LLVM:"
-	@taskset -c $(CPU_PIN) wasmer run --llvm bench-go.wasm
-	@echo ""
-	@echo "Wasmtime:"
-	@taskset -c $(CPU_PIN) wasmtime bench-go.wasm
-	@echo ""
-	@echo "WasmEdge JIT:"
-	@taskset -c $(CPU_PIN) ~/.wasmedge/bin/wasmedge --enable-jit run bench-go.wasm
-	@echo ""
-	@echo "=== WASM Runtime Comparison (C++) ==="
-	@echo "Cranelift (default):"
-	@taskset -c $(CPU_PIN) wasmer run --cranelift bench-cpp.wasm
-	@echo ""
-	@echo "LLVM:"
-	@taskset -c $(CPU_PIN) wasmer run --llvm bench-cpp.wasm
-	@echo ""
-	@echo "Wasmtime:"
-	@taskset -c $(CPU_PIN) wasmtime bench-cpp.wasm
-	@echo ""
-	@echo "WasmEdge JIT:"
-	@taskset -c $(CPU_PIN) ~/.wasmedge/bin/wasmedge --enable-jit run bench-cpp.wasm
-	@echo ""
-	@echo "=== WASM Runtime Comparison (Zig) ==="
-	@echo "Cranelift (default):"
-	@taskset -c $(CPU_PIN) wasmer run --cranelift bench-zig.wasm
-	@echo ""
-	@echo "LLVM:"
-	@taskset -c $(CPU_PIN) wasmer run --llvm bench-zig.wasm
-	@echo ""
-	@echo "Wasmtime:"
-	@taskset -c $(CPU_PIN) wasmtime bench-zig.wasm
-	@echo ""
-	@echo "WasmEdge JIT:"
-	@taskset -c $(CPU_PIN) ~/.wasmedge/bin/wasmedge --enable-jit run bench-zig.wasm
-	@echo ""
+	@for lang in go cpp zig; do \
+		echo "=== WASM Runtime Comparison ($$lang) ==="; \
+		wasm_file="bench-$$lang.wasm"; \
+		echo "Wasmer Cranelift (default):"; \
+		taskset -c $(CPU_PIN) wasmer run --cranelift $$wasm_file; \
+		echo ""; \
+		echo "Wasmer LLVM:"; \
+		taskset -c $(CPU_PIN) wasmer run --llvm $$wasm_file; \
+		echo ""; \
+		echo "Wasmtime:"; \
+		taskset -c $(CPU_PIN) wasmtime $$wasm_file; \
+		echo ""; \
+		echo "WasmEdge JIT:"; \
+		taskset -c $(CPU_PIN) ~/.wasmedge/bin/wasmedge --enable-jit run $$wasm_file; \
+		echo ""; \
+	done
 
 # Run all benchmarks (Go + C++ + Zig + WASM runtimes)
 bench-all: bench-go-all bench-cpp-all bench-zig-all bench-wasm-runtimes

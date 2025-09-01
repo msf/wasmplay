@@ -8,7 +8,6 @@ constexpr int MatrixSize = 64;
 constexpr int Iterations = 10000;
 
 // FNV-1a hash for 64-bit values (matching Go implementation)
-__attribute__((noinline))
 uint64_t fnv1a_hash64(const uint64_t data[MatrixSize][MatrixSize], uint64_t seed) {
     constexpr uint64_t fnv_prime64 = 1099511628211ULL;
     uint64_t hash = seed ^ 14695981039346656037ULL; // FNV offset basis XOR seed
@@ -23,7 +22,6 @@ uint64_t fnv1a_hash64(const uint64_t data[MatrixSize][MatrixSize], uint64_t seed
 }
 
 // Matrix multiply and hash (matching Go implementation)
-__attribute__((noinline))
 uint64_t matmul_and_hash(uint64_t seed) {
     // Generate matrices from seed to prevent constant folding
     uint64_t a[MatrixSize][MatrixSize];

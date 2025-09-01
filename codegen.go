@@ -10,7 +10,6 @@ const (
 	Iterations = 10000 // Number of benchmark iterations
 )
 
-//go:noinline
 func matmulAndHash(seed uint64) uint64 {
 	// Generate matrices from seed to prevent constant folding
 	var a, b [MatrixSize][MatrixSize]uint64
@@ -32,13 +31,11 @@ func matmulAndHash(seed uint64) uint64 {
 	}
 
 	// FNV-1a hash of result matrix
-	return fnv1aHash64(c[:], seed)
+	return fnv1aHash64(c, seed)
 }
 
 // FNV-1a hash for 64-bit values
-//
-//go:noinline
-func fnv1aHash64(data [][MatrixSize]uint64, seed uint64) uint64 {
+func fnv1aHash64(data [MatrixSize][MatrixSize]uint64, seed uint64) uint64 {
 	const fnvPrime64 = 1099511628211
 	hash := seed ^ 14695981039346656037 // FNV offset basis XOR seed
 
