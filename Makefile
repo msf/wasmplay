@@ -1,75 +1,141 @@
 # Benchmark suite for multi-language performance comparison
-.PHONY: all bench clean bench-native bench-wasm build-native build-wasm help
+.PHONY: all bench clean bench-go bench-wasm build-go build-go-wasm help
 
 # Default target
-all: build-native build-wasm
+all: build-go build-go-wasm
 
 # Build targets
-build-native:
+build-go:
 	@echo "Building native Go binary..."
-	go build -o bench-native codegen.go
+	go build -o bench-go codegen.go
 
-build-wasm:
+build-go-wasm:
 	@echo "Building WASM binary..."
-	GOOS=wasip1 GOARCH=wasm go build -o bench.wasm codegen.go
+	GOOS=wasip1 GOARCH=wasm go build -o bench-go.wasm codegen.go
 
-build-wasm-opt:
+build-go-wasm-opt:
 	@echo "Building optimized WASM binary..."
-	GOOS=wasip1 GOARCH=wasm go build -ldflags="-s -w" -gcflags="-l=4" -o bench-opt.wasm codegen.go
+	GOOS=wasip1 GOARCH=wasm go build -ldflags="-s -w" -gcflags="-l=4" -o bench-go-opt.wasm codegen.go
+
+# C++ Compiler and flags
+CXX ?= g++
+EMXX ?= em++
+
+# Security-hardened CFLAGS from OpenSSF
+CFLAGS_SECURITY = -Wall -Wformat -Wformat=2 -Wconversion -Wimplicit-fallthrough \
+	-Werror=format-security \
+	-U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 \
+	-D_GLIBCXX_ASSERTIONS \
+	-fstrict-flex-arrays=3 \
+	-fstack-clash-protection -fstack-protector-strong \
+	-Wl,-z,nodlopen -Wl,-z,noexecstack \
+	-Wl,-z,relro -Wl,-z,now \
+	-Wl,--as-needed -Wl,--no-copy-dt-needed-entries
+
+CXXFLAGS_DEFAULT = -std=c++20 -O2 $(CFLAGS_SECURITY)
+CXXFLAGS_OPT = -std=c++20 -O3 -march=native -mtune=native -flto -DNDEBUG $(CFLAGS_SECURITY)
+
+# C++ build targets
+build-cpp:
+	@echo "Building C++ binary..."
+	$(CXX) $(CXXFLAGS_DEFAULT) -o bench-cpp benchmark.cpp
+
+build-cpp-opt:
+	@echo "Building optimized C++ binary..."
+	$(CXX) $(CXXFLAGS_OPT) -o bench-cpp-opt benchmark.cpp
+
+build-cpp-wasm:
+	@echo "Building C++ -> WASM binary..."
+	$(EMXX) -std=c++20 -O2 -o bench-cpp.wasm benchmark.cpp
 
 # CPU to pin to (change if needed)
 CPU_PIN = 0
 
-# Benchmark targets
-bench-native: build-native
-	@echo "=== Native Go (AMD64) - CPU pinned ==="
-	taskset -c $(CPU_PIN) ./bench-native
+# 4 Core benchmark targets
+bench-go: build-go
+	@echo "=== Go Native ==="
+	taskset -c $(CPU_PIN) ./bench-go
 
-bench-wasm: build-wasm
-	@echo "=== Go -> WASM (Wasmtime) - CPU pinned ==="
-	taskset -c $(CPU_PIN) wasmtime bench.wasm
+bench-go-wasm: build-go-wasm
+	@echo "=== WASM (Wasmer) ==="
+	taskset -c $(CPU_PIN) wasmer run bench-go.wasm
 
-bench-wasm-wasmer: build-wasm
-	@echo "=== Go -> WASM (Wasmer) - CPU pinned ==="
-	taskset -c $(CPU_PIN) wasmer run bench.wasm
+# C++ benchmark targets
+bench-cpp: build-cpp
+	@echo "=== C++ Native ==="
+	taskset -c $(CPU_PIN) ./bench-cpp
 
-# Optimized Go -> WASM builds
-bench-wasm-go-opt: build-wasm-opt
-	@echo "=== Go Optimized -> WASM (Wasmtime) - CPU pinned ==="
-	taskset -c $(CPU_PIN) wasmtime bench-opt.wasm
+bench-cpp-opt: build-cpp-opt
+	@echo "=== C++ Native (Optimized) ==="
+	taskset -c $(CPU_PIN) ./bench-cpp-opt
 
-bench-wasm-go-opt-wasmer: build-wasm-opt
-	@echo "=== Go Optimized -> WASM (Wasmer) - CPU pinned ==="
-	taskset -c $(CPU_PIN) wasmer run bench-opt.wasm
+bench-cpp-wasm: build-cpp-wasm
+	@echo "=== C++ -> WASM (Wasmer) ==="
+	taskset -c $(CPU_PIN) wasmer run bench-cpp.wasm
 
-# Run all benchmarks
-bench: bench-native bench-wasm bench-wasm-wasmer
+bench-cpp-wasm-opt: build-cpp-wasm-opt
+	@echo "=== C++ -> WASM Optimized (Wasmer) ==="
+	taskset -c $(CPU_PIN) wasmer run --llvm bench-cpp-opt.wasm
 
-# Optimized variants (runtime optimizations)
-bench-wasm-runtime-opt: build-wasm
-	@echo "=== Go -> WASM (Wasmtime Runtime Optimized) - CPU pinned ==="
-	taskset -c $(CPU_PIN) wasmtime -O opt-level=2 -O pooling-allocator=y bench.wasm
+# Run all Go benchmarks
+bench-go-all: bench-go bench-go-opt bench-go-wasm
 
-bench-go-opt:
-	@echo "=== Native Go (Optimized) - CPU pinned ==="
-	go build -ldflags="-s -w" -gcflags="-l=4" -o bench-native-opt codegen.go
-	taskset -c $(CPU_PIN) ./bench-native-opt
+# Run all C++ benchmarks  
+bench-cpp-all: bench-cpp bench-cpp-opt bench-cpp-wasm
 
-# Extended benchmark suite
-bench-all: bench bench-wasm-opt bench-go-opt
+bench-wasm-all: bench-cpp-wasm bench-go-wasm
+
+# WASM runtime comparison targets
+bench-wasm-runtimes: build-go-wasm build-cpp-wasm
+	@echo "=== WASM Runtime Comparison (Go) ==="
+	@echo "Cranelift (default):"
+	@taskset -c $(CPU_PIN) wasmer run --cranelift bench-go.wasm
+	@echo ""
+	@echo "LLVM:"
+	@taskset -c $(CPU_PIN) wasmer run --llvm bench-go.wasm
+	@echo ""
+	@echo "Wasmtime:"
+	@taskset -c $(CPU_PIN) wasmtime bench-go.wasm
+	@echo ""
+	@echo "WasmEdge JIT:"
+	@taskset -c $(CPU_PIN) ~/.wasmedge/bin/wasmedge --enable-jit run bench-go.wasm
+	@echo ""
+	@echo "=== WASM Runtime Comparison (C++) ==="
+	@echo "Cranelift (default):"
+	@taskset -c $(CPU_PIN) wasmer run --cranelift bench-cpp.wasm
+	@echo ""
+	@echo "LLVM:"
+	@taskset -c $(CPU_PIN) wasmer run --llvm bench-cpp.wasm
+	@echo ""
+	@echo "Wasmtime:"
+	@taskset -c $(CPU_PIN) wasmtime bench-cpp.wasm
+	@echo ""
+	@echo "WasmEdge JIT:"
+	@taskset -c $(CPU_PIN) ~/.wasmedge/bin/wasmedge --enable-jit run bench-cpp.wasm
+	@echo ""
+
+# Run all benchmarks (Go + C++ + WASM runtimes)
+bench-all: bench-go-all bench-cpp-all bench-wasm-runtimes
 
 clean:
-	rm -f bench-native bench-native-opt bench.wasm *.cwasm
+	rm -f bench-* *.wasm *.cwasm *.out
 
 help:
 	@echo "Available targets:"
-	@echo "  bench          - Run native + WASM benchmarks"
-	@echo "  bench-native   - Run native Go benchmark"
-	@echo "  bench-wasm     - Run WASM benchmark (Wasmtime)"
-	@echo "  bench-wasm-wasmer - Run WASM benchmark (Wasmer)"
-	@echo "  bench-wasm-opt - Run optimized WASM benchmark"
-	@echo "  bench-go-opt   - Run optimized native Go benchmark"
-	@echo "  bench-all      - Run all benchmark variants"
-	@echo "  build-native   - Build native binary"
-	@echo "  build-wasm     - Build WASM binary"
+	@echo "  bench-all           - Run all benchmarks (Go + C++ + WASM runtimes)"
+	@echo "  bench-go-all        - Run Go benchmarks only"
+	@echo "  bench-cpp-all       - Run C++ benchmarks only"
+	@echo "  bench-wasm-runtimes - Compare WASM runtimes (Cranelift/LLVM/Wasmtime)"
+	@echo ""
+	@echo "Individual targets:"
+	@echo "  bench-go       - Go native"
+	@echo "  bench-wasm     - Go -> WASM"
+	@echo "  bench-cpp      - C++ native (security hardened)"
+	@echo "  bench-cpp-opt  - C++ native (optimized -march=native)"
+	@echo "  bench-cpp-wasm - C++ -> WASM (Emscripten)"
+	@echo ""
+	@echo "Compiler options:"
+	@echo "  CXX=clang++ make bench-cpp    - Use Clang instead of GCC"
+	@echo "  CXX=clang++ make bench-cpp-opt - Use Clang with optimizations"
+	@echo ""
 	@echo "  clean          - Clean built files"
