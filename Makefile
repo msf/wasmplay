@@ -21,6 +21,9 @@ build-go-wasm-opt:
 CXX ?= g++
 EMXX ?= em++
 
+# Zig compiler
+ZIG ?= zig
+
 # Security-hardened CFLAGS from OpenSSF
 CFLAGS_SECURITY = -Wall -Wformat -Wformat=2 -Wconversion -Wimplicit-fallthrough \
 	-Werror=format-security \
@@ -47,6 +50,19 @@ build-cpp-opt:
 build-cpp-wasm:
 	@echo "Building C++ -> WASM binary..."
 	$(EMXX) -std=c++20 -O2 -o bench-cpp.wasm benchmark.cpp
+
+# Zig build targets
+build-zig:
+	@echo "Building Zig binary (native backend)..."
+	$(ZIG) build-exe -O ReleaseSafe benchmark.zig -femit-bin=bench-zig
+
+build-zig-opt:
+	@echo "Building optimized Zig binary (native backend)..."
+	$(ZIG) build-exe -O ReleaseFast benchmark.zig -femit-bin=bench-zig-opt
+
+build-zig-wasm:
+	@echo "Building Zig -> WASM binary..."
+	$(ZIG) build-exe -O ReleaseFast -target wasm32-wasi benchmark.zig -femit-bin=bench-zig.wasm
 
 # CPU to pin to (change if needed)
 CPU_PIN = 0
@@ -77,16 +93,32 @@ bench-cpp-wasm-opt: build-cpp-wasm-opt
 	@echo "=== C++ -> WASM Optimized (Wasmer) ==="
 	taskset -c $(CPU_PIN) wasmer run --llvm bench-cpp-opt.wasm
 
+# Zig benchmark targets
+bench-zig: build-zig
+	@echo "=== Zig Native ==="
+	taskset -c $(CPU_PIN) ./bench-zig
+
+bench-zig-opt: build-zig-opt
+	@echo "=== Zig Native (Optimized) ==="
+	taskset -c $(CPU_PIN) ./bench-zig-opt
+
+bench-zig-wasm: build-zig-wasm
+	@echo "=== Zig -> WASM (Wasmer) ==="
+	taskset -c $(CPU_PIN) wasmer run bench-zig.wasm
+
 # Run all Go benchmarks
-bench-go-all: bench-go bench-go-opt bench-go-wasm
+bench-go-all: bench-go bench-go-wasm
 
 # Run all C++ benchmarks  
 bench-cpp-all: bench-cpp bench-cpp-opt bench-cpp-wasm
 
-bench-wasm-all: bench-cpp-wasm bench-go-wasm
+# Run all Zig benchmarks
+bench-zig-all: bench-zig bench-zig-opt bench-zig-wasm
+
+bench-wasm-all: bench-cpp-wasm bench-go-wasm bench-zig-wasm
 
 # WASM runtime comparison targets
-bench-wasm-runtimes: build-go-wasm build-cpp-wasm
+bench-wasm-runtimes: build-go-wasm build-cpp-wasm build-zig-wasm
 	@echo "=== WASM Runtime Comparison (Go) ==="
 	@echo "Cranelift (default):"
 	@taskset -c $(CPU_PIN) wasmer run --cranelift bench-go.wasm
@@ -113,9 +145,22 @@ bench-wasm-runtimes: build-go-wasm build-cpp-wasm
 	@echo "WasmEdge JIT:"
 	@taskset -c $(CPU_PIN) ~/.wasmedge/bin/wasmedge --enable-jit run bench-cpp.wasm
 	@echo ""
+	@echo "=== WASM Runtime Comparison (Zig) ==="
+	@echo "Cranelift (default):"
+	@taskset -c $(CPU_PIN) wasmer run --cranelift bench-zig.wasm
+	@echo ""
+	@echo "LLVM:"
+	@taskset -c $(CPU_PIN) wasmer run --llvm bench-zig.wasm
+	@echo ""
+	@echo "Wasmtime:"
+	@taskset -c $(CPU_PIN) wasmtime bench-zig.wasm
+	@echo ""
+	@echo "WasmEdge JIT:"
+	@taskset -c $(CPU_PIN) ~/.wasmedge/bin/wasmedge --enable-jit run bench-zig.wasm
+	@echo ""
 
-# Run all benchmarks (Go + C++ + WASM runtimes)
-bench-all: bench-go-all bench-cpp-all bench-wasm-runtimes
+# Run all benchmarks (Go + C++ + Zig + WASM runtimes)
+bench-all: bench-go-all bench-cpp-all bench-zig-all bench-wasm-runtimes
 
 clean:
 	rm -f bench-* *.wasm *.cwasm *.out
